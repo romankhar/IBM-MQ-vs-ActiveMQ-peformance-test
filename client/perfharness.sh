@@ -1,13 +1,8 @@
 #!/bin/bash
 
-# NAME:		perfharness 
-# VERSION:	1.24
-# DATE:		March 31, 2014
-# AUTHOR:   Roman Kharkovski (http://whywebsphere.com/resources-links)
 #
 # DESCRIPTION:
 # 	This script calls IBM Performance Harness for JMS in various configurations
-#
 #   More details here: http://whywebsphere.com/2014/03/13/websphere-mq-and-apache-activemq-performance-comparison-part-1/
 #
 # CAVEATS/WARNINGS:
@@ -17,20 +12,21 @@
 # RETURNED VALUES:
 #   0  - Execution completed successfully
 #   1  - Something went wrong
+# AUTHOR:   	
+#	Roman Kharkovski (http://whywebsphere.com/resources-links)
+#
 
-# Some useful tips about error checking in bash found here: http://www.davidpashley.com/articles/writing-robust-shell-scripts/
-# This prevents running the script if any of the variables have not been set
 set -o nounset
-# This automatically exits the script if any error occurs while running it
 set -o errexit
 
-source setenv.sh
+source setenv_client.sh
 source ../utils.sh
 source ../mq/list_servers.sh
+source ../mq/add_user.sh
 source ../amq/list_servers.sh
 
 ##############################################################################
-# Prepare WMQ host to run the performance test
+# Prepare host to run the performance test
 #
 # Params
 # 1 - Server type
@@ -142,9 +138,11 @@ setupOperationResponder()
 # Params
 # 1 - Type of server
 # 2 - Type of test (persistent or not)
+# 3 - Operation kind: Requestor or Responder
 ##############################################################################
 calculateClientThreads()
 {
+	echo_my "calculateClientThreads '$1' '$2' '$3'"
 	if [ $1 = $AMQ ]; then
 		NUM_SERVERS=$NUM_AMQ_SERVERS
 	fi
@@ -161,7 +159,11 @@ calculateClientThreads()
 		TOTAL_CLIENTS=$NP_CLIENT_THREADS
 	fi
 	
-	CLIENT_THREADS=$(( $TOTAL_CLIENTS / $NUM_SERVERS ))
+	if [ $3 = $RESPONDER ]; then
+		TOTAL_CLIENTS=`echo "$TOTAL_CLIENTS * $RESPONDER_MULTIPLIER" |bc`
+	fi
+
+	CLIENT_THREADS=`echo "$TOTAL_CLIENTS / $NUM_SERVERS" |bc`
 	echo_my "CLIENT_THREADS='$CLIENT_THREADS' per instance of jmsperf" $ECHO_DEBUG
 }
 
@@ -179,8 +181,6 @@ setupServerTypeWMQ()
 	CLASSPATH="$CLASSPATH:$WMQ_INSTALL_DIR/java/lib/*"
 	CHANNEL=SYSTEM.DEF.SVRCONN
 	PROVIDER_CLASS=WebSphereMQ
-	PERFORMANCE_USER=mqperf
-	PERFORMANCE_USER_PW=password
 	USER=" "
 	PASSWORD=" "
 	# local bindings set to "mqb", tcp/ip bindings set to "mqc" - depending on whether this client is running on the same host as the server
@@ -188,12 +188,11 @@ setupServerTypeWMQ()
 		MQ_BINDINDS=mqb
 	else
 		MQ_BINDINDS=mqc
-		# USER="-us $PERFORMANCE_USER"
-		# PASSWORD="-pw $PERFORMANCE_USER_PW"
+		# TODO - why is this required even when I disable channel authentication?
+		USER="-us $PERFORMANCE_USER"
+		PASSWORD="-pw $PERFORMANCE_USER_PW"
 	fi
-	INPUT_Q=REQUEST
-	OUTPUT_Q=REPLY
-	VENDOR_SPECIFIC_SETTINGS="-jb $1 -jh $2 -jp $3 -jc $CHANNEL -pc $PROVIDER_CLASS -jt $MQ_BINDINDS -jq SYSTEM.BROKER.DEFAULT.STREAM -ja $WMQ_ACKNOWLEDGEMENT_MAX_MSGS -oq $OUTPUT_Q -iq $INPUT_Q $USER $PASSWORD"	
+	VENDOR_SPECIFIC_SETTINGS="-jb $1 -jh $2 -jp $3 -jc $CHANNEL -pc $PROVIDER_CLASS -jt $MQ_BINDINDS -jq SYSTEM.BROKER.DEFAULT.STREAM -ja $WMQ_ACKNOWLEDGEMENT_MAX_MSGS -oq $MQ_OUTPUT_Q -iq $MQ_INPUT_Q $USER $PASSWORD"	
 }
 
 ##############################################################################
@@ -210,20 +209,18 @@ setupServerTypeAMQ()
 {
 	echo_my "Configuring 'AMQ'..."
 	REQUESTOR_OR_RESPONDER=$4
-	CLASSPATH="$CLASSPATH:$AMQ_INSTALL_DIR/activemq-all-5.9.0.jar"
+	CLASSPATH="$CLASSPATH:$AMQ_INSTALL_DIR/$ACTIVEMQ_JAR"
 
 	if [ $REQUESTOR_OR_RESPONDER = $RESPONDER ] && [ $AMQ_USE_VM_PROTOCOL = 'true' ]; then
 		 # At certain times I seem to be having an issue with this JIRA bug: https://issues.apache.org/jira/browse/AMQ-4097
 		 # "vm" protocol is not for production use, so this line below will not be used for performance tests
-        JNDI_PROVIDER_URL="vm:broker:(tcp://localhost:$3,tcp://$2:$3)?persistent=true&useJmx=false"
-        echo_my "'vm' protocol should not be used for production environment!!!" $ECHO_WARNING
-    else
-        JNDI_PROVIDER_URL="$AMQ_PROTOCOL://$2:$3$AMQ_PROVIDER_OPTIONS"
-    fi
+	        JNDI_PROVIDER_URL="vm:broker:(tcp://localhost:$3,tcp://$2:$3)?persistent=true&useJmx=false"
+        	echo_my "'vm' protocol should not be used for production environment!!!" $ECHO_WARNING
+	else
+        	JNDI_PROVIDER_URL="$AMQ_PROTOCOL://$2:$3$AMQ_PROVIDER_OPTIONS"
+	fi
 
-	INPUT_Q=dynamicQueues/REQUEST
-	OUTPUT_Q=dynamicQueues/REPLY
-	VENDOR_SPECIFIC_SETTINGS="-pc $AMQ_PROVIDER_CLASS -ii $AMQ_CONTEXT_FACTORY -iu $JNDI_PROVIDER_URL -cf $AMQ_CONNECTION_FACTORY -oq $OUTPUT_Q -iq $INPUT_Q"
+	VENDOR_SPECIFIC_SETTINGS="-pc $AMQ_PROVIDER_CLASS -ii $AMQ_CONTEXT_FACTORY -iu $JNDI_PROVIDER_URL -cf $AMQ_CONNECTION_FACTORY -oq $AMQ_OUTPUT_Q -iq $AMQ_INPUT_Q"
 }
 
 ##############################################################################
@@ -251,7 +248,7 @@ searchForResults() {
 	STATUS=0
 	COUNT=0
 	MAX_WAIT_NO_MESSAGE=$[REQUESTOR_RUN_TIME + 60]
-	calculateClientThreads $3 $4
+	calculateClientThreads $3 $4 $2
 	
 	# Example of what we need to be searching for: 
 	# totalIterations=6833,avgDuration=2.00,totalRate=3414.79
@@ -314,9 +311,9 @@ callPerfHarness() {
 	setupOperation$2
 	setupServerType$1 $4 $6 $5 $2 $7
 	setupQoS$3
-	calculateClientThreads $1 $3
+	calculateClientThreads $1 $3 $2
 	
-	COMMAND="-cp $CLASSPATH $JAVA_OPTS JMSPerfHarness -su -id $CLIENT_ID -tc $REQUESTOR $VENDOR_SPECIFIC_SETTINGS -db $MIN_Q_NUM -dx $MAX_Q_NUM -to $TIMEOUT -co $CORRELATION -mt $MSG_TYPE -mf $MESSAGE_PATH/$MSG_SIZE -wi $WAIT -rl $RUN_TIME -sw $WARM_UP_TIME -ss $STATRPT -nt $CLIENT_THREADS -pp $USE_PERSISTENT_MSGS -tx $TRANSACTIONS -sc BasicStats"
+	COMMAND="-cp $CLASSPATH $JAVA_OPTS JMSPerfHarness -su -id $CLIENT_ID -tc $REQUESTOR $VENDOR_SPECIFIC_SETTINGS -db $MIN_Q_NUM -dx $MAX_Q_NUM -to $TIMEOUT -co $CORRELATION -mt $MSG_TYPE -mf $MESSAGE_PATH/$MSG_SIZE -wi $WAIT -rl $RUN_TIME -sw $WARM_UP_TIME -ss $STAT_REPORT_SEC -nt $CLIENT_THREADS -pp $USE_PERSISTENT_MSGS -tx $TRANSACTIONS -sc BasicStats"
 
 	echo_my "Command to be run='java $COMMAND'"
 	java $COMMAND

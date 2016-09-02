@@ -1,6 +1,10 @@
 #!/bin/bash
 
-source setenv.sh
+# VERSION:	1.2
+# DATE:		January 14, 2015
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
+
+source setenv_mq.sh
 source ../utils.sh
 source list_servers.sh
 

@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# NAME:		list_servers
-# VERSION:	1.19
-# DATE:		March 20, 2014
-# AUTHOR:   Roman Kharkovski (http://whywebsphere.com/resources-links)
+# VERSION:	1.2
+# DATE:		January 14, 2015
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
 #
 # DESCRIPTION:
 # 	This script creates a list of WMQ servers in the environment variable (in a format of '0 1 2 3 4' etc.)
@@ -11,10 +10,13 @@
 
 source ../utils.sh
 
-NUM_WMQ_SERVERS=4
+# How many QMs total
+#NUM_WMQ_SERVERS=4
+NUM_WMQ_SERVERS=2
 
 # List of WMQ Queue Managers to connect to - these numbers will be appended to the PERF name (i.e. PERF0, PERF1, etc.) and to the port number (i.e. xxx0, xxx1, etc.)
 # At the very least we have one QM (started with 0)
+# Do not change this value as it is automatically generated based on the $NUM_WMQ_SERVERS above
 LIST_WMQ_MANAGERS="0"
 
 for ((i=1; i<$NUM_WMQ_SERVERS; i++)); do

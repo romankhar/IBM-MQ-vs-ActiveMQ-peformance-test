@@ -1,31 +1,47 @@
 #!/bin/bash
-
-# NAME:		functions
-# VERSION:	1.13
-# DATE:		March 19, 2014
-# AUTHOR:   Roman Kharkovski (http://whywebsphere.com/resources-links)
+# VERSION:	1.22
+# DATE:		Feb 5, 2015
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
 #			With help from the IBM Hursley Lab.
-#
 # DESCRIPTION:
 # 	This script is to be used by other scripts.
-#
-#   http://WhyWebSphere.com
-#
+#	Some decent tuning parameters for WMQ Queue Managers. Read more in the MQ docs: http://ibm.co/1jksAHC
+#	Also see this article on tuning: http://www.ibm.com/developerworks/websphere/library/techarticles/0712_dunn/0712_dunn.html
 
-# Some decent tuning parameters for WMQ Queue Managers. Read more in the docs: http://ibm.co/1jksAHC
-QUEUE_BUFFER_SIZE=1048576
-LOG_BUFFER_PAGES=512
-LOG_PRIMARY_FILES=16
-LOG_FILE_PAGES=16384
+# Tuning options for "qm.ini", channels, etc/
+LOG_TYPE=CIRCULAR
+LOG_TYPE_CRTMQM="-lc"
+LOG_INTEGRITY=TripleWrite
+MQIBindType=FASTPATH
+# Set it to 100MB - when we have lots of memory
+DefaultQBufferSize=104857600
+DefaultPQBufferSize=104857600
+MAX_MSG_SIZE=104857600
+LOG_BUFFER_PAGES=4096
+####################################################################
+####################################################################
+####################################################################
+####################################################################
+#LOG_PRIMARY_FILES=3
+LOG_PRIMARY_FILES=40
+####################################################################
+####################################################################
+####################################################################
+####################################################################
+# For performance reasons is is not recommended to use secondary log files as they are dynamically allocated (not pre-formatted)
+LOG_SECONDARY_FILES=1
+#LOG_FILE_PAGES=16384
+LOG_FILE_PAGES=65535
 MAX_HANDLES=50000
+MAX_DEPTH=50000
 FDMAX=1048576
-PERFORMANCE_USER=mqperf
+MAX_CHANNELS=5000
+
+source $PROJECT_DIR/mq/add_user.sh
 
 ECHON=${ECHON-echo}
 me=$(basename $0)
 
-##############################################################################
-# regexify
 ##############################################################################
 # Convert a string to a regular expression that matches only the given string.
 #
@@ -37,8 +53,6 @@ regexify() {
 	echo $1 | sed -r 's/([][\.\-\+\$\^\\\?\*\{\}\(\)\:])/\\\1/g'
 }
 
-###############################################
-# delAndAppend
 ###############################################
 # Delete a line containing a REGEX from a file,
 # then append a new line.
@@ -55,8 +69,6 @@ delAndAppend() {
 	echo "$2" >> $3
 }
 
-###################################################
-# backupFile
 ###################################################
 # Copy the given file to a file with the same path,
 # but a timestamp appended to the name.
@@ -102,7 +114,7 @@ UpdateSysctl() {
 	# Maximum number of disjoint (non-contiguous), sections of memory a single process can hold (i.e. through calls to malloc).
 	updateSysctl vm.max_map_count 1966080
 	# The maximum PID value. When the PID counter exceeds this, it wraps back to zero.
-	updateSysctl kernel.pid_max 4194303
+	updateSysctl kernel.pid_max 655360
 	# Tunes IPC semaphores. Values are:
 	#  1 - The maximum number of semaphores per set
 	#  2 - The system-wide maximum number of semaphores
@@ -123,6 +135,13 @@ UpdateSysctl() {
 	updateSysctl kernel.shmmax  137438953472
 	# TCP keep alive setting
 	updateSysctl net.ipv4.tcp_keepalive_time 300
+
+	# Some settings borrowed from WMQ 8.0 performance report, page 59
+	updateSysctl kernel.sched_latency_ns 2000000
+	updateSysctl kernel.sched_min_granularity_ns 1000000
+	updateSysctl kernel.sched_wakeup_granularity_ns 400000
+	updateSysctl net.core.somaxconn 163
+
 	# Some settings borrowed from WMQ 7.1 performance report, page 66
 #	updateSysctl net.ipv4.ip_forward 0
 #	updateSysctl net.ipv4.conf.default.rp_filter 1
@@ -151,7 +170,7 @@ UpdateSysctl() {
 }
 
 #############################################
-# AddMQMuser
+# Add new 'mqm' user and update his ulimits and group membership
 #############################################
 AddMQMuser() {
 	echo "------> This function configures Linux kernel so that we can later install WMQ rpms"
@@ -186,17 +205,17 @@ UpdateUserLimits() {
 	backupFile /etc/security/limits.d/$1.conf | true
 	cat <<-EOF > /etc/security/limits.d/$1.conf
 		# Security limits for members of the mqm group
-		mqm soft nofile $FDMAX
-		mqm hard nofile $FDMAX
-		mqm soft nproc  $FDMAX
-		mqm hard nproc  $FDMAX
+		@mqm soft nofile $FDMAX
+		@mqm hard nofile $FDMAX
+		@mqm soft nproc  $FDMAX
+		@mqm hard nproc  $FDMAX
 EOF
 
 	echo "<------ new file [/etc/security/limits.d/$1.conf] created."
 }
 
 #############################################
-# CreateQueueManagerIniFile
+# Create QM.ini file
 #
 # Parameters
 # 1 - Queue Manager temporary file name
@@ -219,13 +238,13 @@ ExitPath:
    ExitsDefaultPath=/var/mqm/exits
    ExitsDefaultPath64=/var/mqm/exits64
 Log:
-   LogPrimaryFiles=16
-   LogSecondaryFiles=16
-   LogFilePages=16384
-   LogType=CIRCULAR
-   LogBufferPages=512
+   LogPrimaryFiles=$LOG_PRIMARY_FILES
+   LogSecondaryFiles=$LOG_SECONDARY_FILES
+   LogFilePages=$LOG_FILE_PAGES
+   LogType=$LOG_TYPE
+   LogBufferPages=$LOG_BUFFER_PAGES
    LogPath=$2/$3/
-   LogWriteIntegrity=TripleWrite
+   LogWriteIntegrity=$LOG_INTEGRITY
 Service:
    Name=AuthorizationService
    EntryPoints=14
@@ -235,12 +254,12 @@ ServiceComponent:
    Module=amqzfu
    ComponentDataSize=0
 Channels:
-   MQIBindType=FASTPATH
-   MaxActiveChannels=5000
-   MaxChannels=5000
+   MQIBindType=$MQIBindType
+   MaxActiveChannels=$MAX_CHANNELS
+   MaxChannels=$MAX_CHANNELS
 TuningParameters:
-   DefaultPQBufferSize=10485760
-   DefaultQBufferSize=10485760
+   DefaultPQBufferSize=$DefaultPQBufferSize
+   DefaultQBufferSize=$DefaultQBufferSize
 TCP:
    SndBuffSize=0
    RcvBuffSize=0
@@ -251,12 +270,11 @@ TCP:
    SvrSndBuffSize=0
    SvrRcvBuffSize=0
 EOF
-   
-	echo "<------"
+   echo "<------ qm.ini is created"
 }
 
 #############################################
-# CreateQueueManager
+# Create QM
 #
 # Parameters
 # 1 - Queue Manager name
@@ -282,21 +300,18 @@ CreateQueueManager() {
 	echo "--- Deleting existing queue manager: $1"
 	# if this returns error we ignore this as QM may not even exist
 	$MY_SUDO dltmqm $1 | true
-
-	echo "--- Creating directories for the new queue manager: $1"
-	# will ignore the case if those directories already exist
-	$MY_SUDO mkdir $3 | true
-	$MY_SUDO chmod -R ug+rwx $3 | true
-	$MY_SUDO mkdir $4 | true
-	$MY_SUDO chmod -R g+rwx $4 | true
+	
+	# if this returns error we ignore this as QM may not even exist
+	$MY_SUDO rmvmqinf $1 | true
 
 	echo "--- Creating new queue manager: $1"
-	CREATE_COMMAND="$MY_SUDO crtmqm -q -u SYSTEM.DEAD.LETTER.QUEUE -h $MAX_HANDLES -lc -ld $4 -lf $LOG_FILE_PAGES -lp $LOG_PRIMARY_FILES -md $3 $1"
+	CREATE_COMMAND="$MY_SUDO crtmqm -q -u SYSTEM.DEAD.LETTER.QUEUE -h $MAX_HANDLES $LOG_TYPE_CRTMQM -ld $4 -lf $LOG_FILE_PAGES -lp $LOG_PRIMARY_FILES -ls $LOG_SECONDARY_FILES -md $3 $1"
 
 	echo $CREATE_COMMAND
 	$CREATE_COMMAND
 
 	echo "--- Reset default values for the queue manager: $1"
+	# what if we do not do this?
 	$MY_SUDO strmqm -c $1
 
 	echo "--- Generating qm.ini file"
@@ -304,39 +319,72 @@ CreateQueueManager() {
 	CreateQueueManagerIniFile $INI_TMP $4 $1
 
 	echo "--- Copy new configuration over the one that was created by defaults"
+	backupFile $3/$1/qm.ini | true
 	$MY_SUDO cp $INI_TMP $3/$1/qm.ini
+	# remove needs to be done separately so that initial qm.ini permissions are preserved
 	rm $INI_TMP
 
 	echo "--- Starting queue manager: $1"
 	$MY_SUDO strmqm $1
 
-	echo "--- Create queues and configure queue manager: $1"
-	# read more about security settings here: http://www-01.ibm.com/support/docview.wss?uid=swg21577137
-	# and here: http://stackoverflow.com/questions/8886627/websphere-mq-7-1-help-need-access-or-security/8886813#8886813
-	$MY_SUDO runmqsc $1 < queue_definitions.mqsc
-
+	echo "--- Configure queue manager: $1"
 	$MY_SUDO runmqsc $1 <<-EOF
-		define qlocal($REQUESTQ) maxdepth(50000)
-		define qlocal($REPLYQ) maxdepth(50000)
+		define qlocal($REQUESTQ) maxdepth($MAX_DEPTH)
+		define qlocal($REPLYQ) maxdepth($MAX_DEPTH)
 		alter qmgr chlauth(disabled)
 		alter qmgr activrec(disabled)
 		alter qmgr routerec(disabled)
-		alter qmgr maxmsgl(104857600)
-		alter qlocal(system.default.local.queue) maxmsgl(104857600)
-		alter qmodel(system.default.model.queue) maxmsgl(104857600)
+		alter qmgr chad(enabled)
+		alter qmgr maxmsgl($MAX_MSG_SIZE)
+		alter qlocal(system.default.local.queue) maxmsgl($MAX_MSG_SIZE)
+		alter qmodel(system.default.model.queue) maxmsgl($MAX_MSG_SIZE)
 		define listener(L1) trptype(tcp) port($2) control(qmgr)
 		start listener(L1)
-		alter channel(SYSTEM.DEF.SVRCONN) chltype(SVRCONN) sharecnv(1)
-		define channel(system.admin.svrconn) chltype(svrconn) mcauser('mqm') replace
+		alter channel(system.def.svrconn) chltype(svrconn) sharecnv(1)
+		alter channel(system.def.svrconn) chltype(svrconn) maxmsgl($MAX_MSG_SIZE)
 EOF
-
-#		alter channel(system.def.svrconn) chltype(svrconn) mcauser($PERFORMANCE_USER) maxmsgl(104857600)
+#		alter channel(SYSTEM.AUTO.SVRCONN) chltype(svrconn) sharecnv(1)
+#		alter channel(system.def.receiver) chltype(rcvr) sharecnv(1) mcatype('THREAD')
+# 		define channel(system.admin.svrconn) chltype(svrconn) mcauser('mqm') replace
+#		alter channel(system.def.svrconn) chltype(svrconn) mcauser($PERFORMANCE_USER) maxmsgl($MAX_MSG_SIZE)
 
 	echo "--- Restart queue manager: $1"
 	$MY_SUDO endmqm -i $1
 	$MY_SUDO strmqm $1
 
+	echo "--- Create queues in QM: $1"
+	# read more about security settings here: http://www-01.ibm.com/support/docview.wss?uid=swg21577137
+	# and here: http://stackoverflow.com/questions/8886627/websphere-mq-7-1-help-need-access-or-security/8886813#8886813
+	$MY_SUDO runmqsc $1 < $Q_DEFINITION_FILE
+
 	echo "<------ DONE with SUCCESS - creation of queue manager went well: $1"
+}
+
+#############################################
+# RemoveeQueueManager
+#
+# Parameters
+# 1 - Queue Manager name
+#############################################
+RemoveQueueManager() {
+	echo "------> This function removes queue manager $1 and all queues"
+	if [[ -z "${SUDO_USER+present}" ]]; then
+		# No need to do sudo if this function was called without sudo command
+		echo "FYI: No sudo user defined."
+		MY_SUDO=""
+	else
+		echo "FYI: Sudo user is '$SUDO_USER'"
+		MY_SUDO="sudo -u $SUDO_USER"
+	fi
+
+	echo "--- Stopping existing queue manager first: $1"
+	# if this returns error we ignore this as QM may not even exist
+	$MY_SUDO endmqm -i $1 | true
+
+	echo "--- Deleting existing queue manager: $1"
+	$MY_SUDO dltmqm $1 | true
+
+	echo "<------ DONE with SUCCESS - removal of queue manager went well: $1"
 }
 
 #############################################
@@ -402,7 +450,7 @@ InstallWMQ() {
 
 	# Finally need to run check of prerequisites and see if any of the checks fail (Warnings exit=1, Errors exit=2)
 	#su mqm -c "$WMQ_INSTALL_DIR/bin/mqconfig"
-	#su $SUDO_USER -c "$WMQ_INSTALL_DIR/bin/mqconfig"
+	su $SUDO_USER -c "$WMQ_INSTALL_DIR/bin/mqconfig"
 
 	echo "<------ DONE with SUCCESS - installation of WMQ is complete at the following path: $WMQ_INSTALL_DIR"
 }

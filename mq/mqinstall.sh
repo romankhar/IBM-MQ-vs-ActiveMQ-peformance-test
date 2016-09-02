@@ -1,8 +1,8 @@
 #!/bin/bash
-# NAME:      	mqinstall
-# VERSION:	    1.11
-# DATE:	        January 23, 2014
-# AUTHOR:    	Roman Kharkovski (http://whywebsphere.com/resources-links)
+
+# VERSION:	1.2
+# DATE:		January 14, 2015
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
 #
 # DESCRIPTION:
 # 	This script unpacks pre-existing downloaded version of WebSphereMQ on RHEL OS,
@@ -43,21 +43,18 @@ set -o nounset
 # This automatically exits the script if any error occurs while running it
 set -o errexit
 
-source setenv.sh
+source setenv_mq.sh
 
-# For best performance your queuqe file and your log file really should point to two separate physical disks, but for this test we don't care
+# For best performance your queue file and your log file should point to two separate physical disks
 QM_DATA_PATH=/var/mqm/${QM}_DATA
 QM_LOG_PATH=/var/mqm/${QM}_LOG
 
 # Feel free to change these as you see fit
 DOWNLOAD_PATH=/home/$SUDO_USER/Downloads
-WMQ_ARCHIVE=MQ_7.5.0.2_TRIAL_LNX_ON_X86_64_ML.tar.gz
+WMQ_ARCHIVE=WS_MQ_LINUX_ON_X86_64_V8.0_IMG.tar.gz
 
 source functions.sh
 
-#############################################
-# MAIN BODY starts here
-#############################################
 echo ""
 echo "------------------------------------------------------------------------------"
 echo " This script will install WebSphere MQ on your Linux OS"

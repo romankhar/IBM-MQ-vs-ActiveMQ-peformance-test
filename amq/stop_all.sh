@@ -1,6 +1,11 @@
 #!/bin/bash
 
-source setenv.sh
+#
+# DESCRIPTION:	Stops all quque managers
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
+#
+
+source setenv_amq.sh
 source ../utils.sh
 source list_servers.sh
 

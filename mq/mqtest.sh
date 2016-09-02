@@ -1,8 +1,8 @@
 #!/bin/bash
-# NAME:      	mqtest
-# VERSION:	1.1
-# DATE:	January 22, 2014
-# AUTHOR:    	Roman Kharkovski (http://whywebsphere.com/resources-links)
+
+# VERSION:	1.2
+# DATE:		January 14, 2015
+# AUTHOR:   	Roman Kharkovski (http://whywebsphere.com/resources-links)
 #
 # DESCRIPTION:
 # 	This script tests the operation of the queue manager by putting and getting messages from the queue using IBM's Performanced Harness tool
@@ -19,8 +19,10 @@ set -o nounset
 # This automatically exits the script if any error occurs while running it
 set -o errexit
 	
-source setenv.sh
+source setenv_mq.sh
 source ../utils.sh
+
+PERFHARNESS=../client/perfharness12.jar
 
 #############################################
 # RunTestMessages
@@ -47,10 +49,10 @@ echo_my " Starting requestor and responder background processes in parallel..."
 # IBM's PerformanceHarness for JMS can run very sophisticated performance tests. Read more here: http://ibm.co/LGAWLt
 
 # This will start the responder client - it needs to run longer than the requester and its  performance numbers can be ignored since it will be sitting idle half of the time
-java -cp perfharness12.jar:$WMQ_INSTALL_DIR/java/lib/* -Xms1024M -Xmx1024M -Xmn800M JMSPerfHarness -su -id 1 -tc jms.r11.Responder -jb $1 -jp $5 -jh $4 -jc SYSTEM.DEF.SVRCONN -pc WebSphereMQ -jt mqb -jq SYSTEM.BROKER.DEFAULT.STREAM -ja 100 -oq $3 -iq $2 -to 50 -co false -mt text -mf payload.txt -wi 0 -rl 15 -ss 1 -nt 5 -pp false -tx false -sc BasicStats &
+java -cp $PERFHARNESS:$WMQ_INSTALL_DIR/java/lib/* -Xms1024M -Xmx1024M -Xmn800M JMSPerfHarness -su -id 1 -tc jms.r11.Responder -jb $1 -jp $5 -jh $4 -jc SYSTEM.DEF.SVRCONN -pc WebSphereMQ -jt mqb -jq SYSTEM.BROKER.DEFAULT.STREAM -ja 100 -oq $3 -iq $2 -to 50 -co false -mt text -mf payload.txt -wi 0 -rl 15 -ss 1 -nt 5 -pp false -tx false -sc BasicStats &
 
 # This starts the requestor client (put message in $2 and wait for reply from the $3 - these are the real performance numbers
-java -cp perfharness12.jar:$WMQ_INSTALL_DIR/java/lib/* -Xms1024M -Xmx1024M -Xmn800M JMSPerfHarness -su -id 1 -tc jms.r11.Requestor -jb $1 -jp $5 -jh $4 -jc SYSTEM.DEF.SVRCONN -pc WebSphereMQ -jt mqb -jq SYSTEM.BROKER.DEFAULT.STREAM -ja 100 -oq $3 -iq $2 -to 50 -co false -mt text -mf payload.txt -wi 0 -rl 10 -ss 1 -nt 5 -pp false -tx false -sc BasicStats &
+java -cp $PERFHARNESS:$WMQ_INSTALL_DIR/java/lib/* -Xms1024M -Xmx1024M -Xmn800M JMSPerfHarness -su -id 1 -tc jms.r11.Requestor -jb $1 -jp $5 -jh $4 -jc SYSTEM.DEF.SVRCONN -pc WebSphereMQ -jt mqb -jq SYSTEM.BROKER.DEFAULT.STREAM -ja 100 -oq $3 -iq $2 -to 50 -co false -mt text -mf payload.txt -wi 0 -rl 10 -ss 1 -nt 5 -pp false -tx false -sc BasicStats &
 
 }
 

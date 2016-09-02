@@ -17,12 +17,29 @@ set -o nounset
 # This automatically exits the script if any error occurs while running it
 set -o errexit
 
+source host_list.sh
+
 ECHON=${ECHON-echo}
 me=$(basename $0)
-INTERFACE=eth3
 
-##############################################################################
-# regexify
+HOSTNAME=`hostname`
+
+# to change the name of the interface - edit this: $BASH_SOURCE
+# or we can handle it here
+if [ $HOSTNAME = $CLIENTHOST ]; then
+	INTERFACE=eth6
+fi
+	
+if [ $HOSTNAME = $AMQHOST ]; then
+	INTERFACE=eth6
+fi
+
+if [ $HOSTNAME = $MQHOST ]; then
+	INTERFACE=eth4
+fi
+
+echo "Hostname = $HOSTNAME, INTERFACE = $INTERFACE"
+
 ##############################################################################
 # Convert a string to a regular expression that matches only the given string.
 #
@@ -34,8 +51,6 @@ regexify() {
 	echo $1 | sed -r 's/([][\.\-\+\$\^\\\?\*\{\}\(\)\:])/\\\1/g'
 }
 
-###############################################
-# delAndAppend
 ###############################################
 # Delete a line containing a REGEX from a file,
 # then append a new line.
@@ -172,32 +187,30 @@ UpdateSysctl() {
 	# For more TCP tuning on RHEL see http://thesimplecomputer.info/adventures-in-linux-tcp-tuning-page2/
 }
 
-#############################################
-# MAIN BODY starts here
-#############################################
-echo ""
+echo "Starting $BASH_SOURCE ..."
 echo "------------------------------------------------------------------------------"
 echo " This script will tune TCP parameters on your RHEL OS"
 echo " Read more about this script here: http://WhyWebSphere.com"
 echo " Today's date: `date`"
 echo "------------------------------------------------------------------------------"
-echo ""
 
-echo "Show options BEFORE..."
+echo "--- Show options BEFORE..."
 ethtool -k $INTERFACE
 
-echo "Make some sysctl.conf changes..."
-UpdateSysctl
+echo "--- Make some sysctl.conf changes..."
+# TODO - temporary
+echo "--- !!!!!!!!!!!!!!!!!!!!!! TCP TUNING IS TURNED OFF - commented out!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+#UpdateSysctl
 
-echo "Use JumboFrames for TCP..."
+#echo "Use JumboFrames for TCP..."
 #ip link set $INTERFACE mtu 9000
 #ip link set $INTERFACE mtu 3000
 #ip link set $INTERFACE mtu 1500
 
-echo "According to VMware it may or may not be useful to disable LRO: http://kb.vmware.com/selfservice/microsites/search.do?language=en_US&cmd=displayKC&externalId=1027511 ..."
-echo "Enable TSO: http://kb.vmware.com/selfservice/microsites/search.do?language=en_US&cmd=displayKC&externalId=2055140 ..."
-
+#echo "According to VMware it may or may not be useful to disable LRO: http://kb.vmware.com/selfservice/microsites/search.do?language=en_US&cmd=displayKC&externalId=1027511 ..."
+#echo "Enable TSO: http://kb.vmware.com/selfservice/microsites/search.do?language=en_US&cmd=displayKC&externalId=2055140 ..."
 #ethtool -K $INTERFACE gso off tso off sg off gro off lro off
-ethtool -K $INTERFACE gso on tso on sg on gro on lro on
+# TODO - temporary
+#ethtool -K $INTERFACE gso on tso on sg on gro on lro on
 
 echo "DONE: script $BASH_SOURCE"
